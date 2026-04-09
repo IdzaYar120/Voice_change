@@ -19,7 +19,12 @@ class VoiceChangerApp(ctk.CTk):
         self.resizable(False, False)
 
         # Стан програми
-        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            self.device = "cuda:0"
+        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            self.device = "mps"
+        else:
+            self.device = "cpu"
         self.rvc = None
         self.model_loaded = False
         self.is_realtime_running = False
@@ -58,37 +63,51 @@ class VoiceChangerApp(ctk.CTk):
         self.label_model_name = ctk.CTkLabel(self.frame_model, text="Модель не обрана", text_color="gray")
         self.label_model_name.pack(side="left", padx=10)
 
-        # Блок налаштувань (Pitch)
+        # Блок налаштувань (Pitch, Index Rate, Method)
         self.frame_settings = ctk.CTkFrame(self)
         self.frame_settings.pack(pady=10, padx=20, fill="x")
         
-        self.label_pitch = ctk.CTkLabel(self.frame_settings, text="Зміна тональності (Pitch): 0")
-        self.label_pitch.pack(pady=(10, 0))
+        # Рядок з підписами
+        self.label_pitch = ctk.CTkLabel(self.frame_settings, text="Тональність: 0")
+        self.label_pitch.grid(row=0, column=0, padx=10, pady=(10, 0), sticky="w")
         
+        self.label_index = ctk.CTkLabel(self.frame_settings, text="Index Rate: 0.75")
+        self.label_index.grid(row=0, column=1, padx=10, pady=(10, 0), sticky="w")
+        
+        self.label_method = ctk.CTkLabel(self.frame_settings, text="Алгоритм:")
+        self.label_method.grid(row=0, column=2, padx=10, pady=(10, 0), sticky="w")
+
+        # Рядок з елементами керування
         self.slider_pitch = ctk.CTkSlider(self.frame_settings, from_=-12, to=12, number_of_steps=24, command=self.update_pitch_label)
         self.slider_pitch.set(0)
-        self.slider_pitch.pack(pady=(0, 10), padx=20, fill="x")
+        self.slider_pitch.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
 
-        # Вкладки (Файл / Мікрофон)
-        self.tabview = ctk.CTkTabview(self, height=120)
-        self.tabview.pack(pady=10, padx=20, fill="x")
-        
-        self.tab_file = self.tabview.add("Обробка файлу")
-        self.tab_rt = self.tabview.add("Реальний час")
+        self.slider_index = ctk.CTkSlider(self.frame_settings, from_=0.0, to=1.0, number_of_steps=20, command=self.update_index_label)
+        self.slider_index.set(0.75)
+        self.slider_index.grid(row=1, column=1, padx=10, pady=(0, 10), sticky="ew")
 
-        # Кнопки у вкладках
-        self.btn_select_file = ctk.CTkButton(self.tab_file, text="🎵 Обрати аудіо та обробити", command=self.process_file_dialog)
+        self.combo_method = ctk.CTkOptionMenu(self.frame_settings, values=["rmvpe", "pm", "harvest"])
+        self.combo_method.set("rmvpe")
+        self.combo_method.grid(row=1, column=2, padx=10, pady=(0, 10), sticky="ew")
+
+        self.frame_settings.grid_columnconfigure((0, 1, 2), weight=1)
+
+        # Контейнер для кнопки обробки (замість Вкладок)
+        self.frame_action = ctk.CTkFrame(self)
+        self.frame_action.pack(pady=10, padx=20, fill="x")
+
+        self.btn_select_file = ctk.CTkButton(self.frame_action, text="🎵 Обрати аудіо та обробити", height=40, font=ctk.CTkFont(size=14, weight="bold"), command=self.process_file_dialog)
         self.btn_select_file.pack(pady=20)
-
-        self.btn_toggle_rt = ctk.CTkButton(self.tab_rt, text="🎤 Увімкнути мікрофон (Тест)", fg_color="#28a745", hover_color="#218838", command=self.toggle_realtime)
-        self.btn_toggle_rt.pack(pady=20)
 
         # Консоль логів
         self.textbox_log = ctk.CTkTextbox(self, height=150, state="disabled", font=ctk.CTkFont(family="Consolas", size=12))
         self.textbox_log.pack(pady=10, padx=20, fill="both", expand=True)
 
     def update_pitch_label(self, value):
-        self.label_pitch.configure(text=f"Зміна тональності (Pitch): {int(value)}")
+        self.label_pitch.configure(text=f"Тональність: {int(value)}")
+
+    def update_index_label(self, value):
+        self.label_index.configure(text=f"Index Rate: {value:.2f}")
 
     # Потокобезпечне логування для Tkinter
     def log_message(self, text):
@@ -118,7 +137,7 @@ class VoiceChangerApp(ctk.CTk):
             self.rvc.load_model(file_path)
             
             # Автоматичний пошук індексу
-            index_path = file_path.replace(".pth", ".index")
+            index_path = os.path.splitext(file_path)[0] + ".index"
             if os.path.exists(index_path):
                 self.rvc.load_index(index_path)
                 self.log_message("Модель та індекс успішно завантажені!")
@@ -138,60 +157,37 @@ class VoiceChangerApp(ctk.CTk):
         if input_file:
             output_file = f"output/result_{int(time.time())}.wav"
             pitch = int(self.slider_pitch.get())
+            index_rate = float(self.slider_index.get())
+            method = self.combo_method.get()
             
-            self.log_message(f"Початок обробки... Файл: {os.path.basename(input_file)} | Pitch: {pitch}")
+            self.log_message(f"Початок обробки... Файл: {os.path.basename(input_file)} | Pitch: {pitch} | Method: {method}")
             self.btn_select_file.configure(state="disabled", text="⏳ Обробка...")
             
-            threading.Thread(target=self._process_file_thread, args=(input_file, output_file, pitch), daemon=True).start()
+            threading.Thread(target=self._process_file_thread, args=(input_file, output_file, pitch, index_rate, method), daemon=True).start()
 
-    def _process_file_thread(self, input_file, output_file, pitch):
+    def _process_file_thread(self, input_file, output_file, pitch, index_rate, method):
         try:
             self.rvc.infer_file(
                 input_path=input_file,
                 output_path=output_file,
                 pitch_up_key=pitch,
-                method="rmvpe",      # Найкращий алгоритм аналізу висоти
-                index_rate=0.75,     
+                method=method,
+                index_rate=index_rate,     
                 filter_radius=3,
                 resample_sr=0,
                 rms_mix_rate=0.25
             )
             self.log_message(f"✅ Успіх! Файл збережено: {output_file}")
+            
+            # Спробувати відкрити папку з результатом
+            if hasattr(os, 'startfile'):
+                os.startfile(os.path.dirname(os.path.abspath(output_file)))
         except Exception as e:
             self.log_message(f"❌ Помилка обробки: {e}")
         finally:
             self.after(0, lambda: self.btn_select_file.configure(state="normal", text="🎵 Обрати аудіо та обробити"))
 
-    def toggle_realtime(self):
-        if not self.model_loaded:
-            self.log_message("Помилка: Спочатку оберіть модель голосу!")
-            return
 
-        if not self.is_realtime_running:
-            self.is_realtime_running = True
-            self.btn_toggle_rt.configure(text="⏹ Зупинити мікрофон", fg_color="#dc3545", hover_color="#c82333")
-            self.log_message("Запуск потокового аудіо... (Режим бета-тестування)")
-            threading.Thread(target=self._realtime_audio_loop, daemon=True).start()
-        else:
-            self.is_realtime_running = False
-            self.btn_toggle_rt.configure(text="🎤 Увімкнути мікрофон (Тест)", fg_color="#28a745", hover_color="#218838")
-            self.log_message("Мікрофон зупинено.")
-
-    def _realtime_audio_loop(self):
-        """Модуль реального часу."""
-        import sounddevice as sd
-        import numpy as np
-
-        fs = 44100
-        duration = 1.0  # Буфер 1 секунда
-        
-        self.log_message("⚠️ Для повноцінного RVC у реальному часі без затримок краще використовувати спеціалізовані клієнти (напр. W-Okada).")
-        
-        while self.is_realtime_running:
-            time.sleep(1)
-            if self.is_realtime_running:
-                pass # Тут має бути логіка захоплення буфера sd.rec і передачі в модель.
-                # Бібліотека rvc-python наразі краще оптимізована під файли.
 
 if __name__ == "__main__":
     app = VoiceChangerApp()
