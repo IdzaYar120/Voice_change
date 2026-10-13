@@ -1,0 +1,49 @@
+# Builds AnimeSoulsMMO into a Windows .exe on GitHub's servers (GameCI).
+# One-time setup — add repository secrets (Settings → Secrets and variables → Actions):
+#   UNITY_LICENSE  — full contents of your Unity_lic.ulf file
+#   UNITY_EMAIL    — your Unity account e-mail
+#   UNITY_PASSWORD — your Unity account password
+# Result: Actions tab → this run → Artifacts → AnimeSouls-Windows (zip with AnimeSouls.exe).
+name: Build Anime Souls (Windows)
+
+on:
+  push:
+    branches: [ "claude/anime-mmorpg-souls-434ixw" ]
+    paths: [ "AnimeSoulsMMO/**", ".github/workflows/build-anime-souls.yml" ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: actions/cache@v4
+        with:
+          path: AnimeSoulsMMO/Library
+          key: Library-Windows-${{ hashFiles('AnimeSoulsMMO/Assets/**', 'AnimeSoulsMMO/Packages/**', 'AnimeSoulsMMO/ProjectSettings/**') }}
+          restore-keys: Library-Windows-
+
+      - name: Build with Unity
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: AnimeSoulsMMO
+          unityVersion: 2022.3.50f1
+          targetPlatform: StandaloneWindows64
+          buildMethod: AnimeSouls.EditorTools.BuildScript.BuildWindows
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AnimeSouls-Windows
+          path: AnimeSoulsMMO/build/StandaloneWindows64
+          if-no-files-found: error

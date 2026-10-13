@@ -132,3 +132,10 @@ Clones, Summon, Beam, StretchPunch, Slash, Buff, Heal, Shield, Teleport, Rain, P
 
 Імена персонажів і назви аніме належать їхнім правовласникам. Проєкт — некомерційний фан-прототип;
 для комерційного релізу потрібні ліцензії або оригінальні персонажі. Усі моделі та ефекти тут згенеровані кодом.
+
+## Збірка .exe
+
+- **Локально:** меню `Anime Souls → Build Windows (.exe)` → файл з'явиться в `AnimeSoulsMMO/build/StandaloneWindows64/`.
+- **Автоматично на GitHub:** workflow `.github/workflows/build-anime-souls.yml` (GameCI). Додай секрети репозиторію
+  `UNITY_LICENSE` (вміст файлу `Unity_lic.ulf`), `UNITY_EMAIL`, `UNITY_PASSWORD`, і кожен пуш у гілку збиратиме гру;
+  zip з `AnimeSouls.exe` — у вкладці *Actions → запуск → Artifacts*.

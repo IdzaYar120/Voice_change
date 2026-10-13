@@ -34,6 +34,11 @@ namespace AnimeSouls.EditorTools
             PlayerSettings.productName = "Anime Souls MMO";
             PlayerSettings.companyName = "AnimeSouls";
             AssetDatabase.SaveAssets();
+            if (restart && Application.isBatchMode)
+            {
+                Debug.LogError("[AnimeSouls] Active Input Handling was 'Input System' and has been switched to 'Both'. Run the build again so scripts recompile with the legacy Input Manager.");
+                EditorApplication.Exit(1);
+            }
             if (restart)
             {
                 EditorUtility.DisplayDialog("Anime Souls",
